@@ -1,0 +1,9 @@
+本ツールはCryptDBにて処理時間を出力したものを、クエリタイプごとに集計するツールです。
+TPCC-CryptDBの実行に対応しています。
+（https://github.com/GODA-S/tpcc-cryptdb）
+
+
+使い方(How to use)
+./makeavg_timelog.py [元ファイル] [出力ファイル]　の形式で実行
+内容についてはサンプルファイルをご覧ください。
+（元ファイル：処理時間出力を行ったCryptDBのログ）

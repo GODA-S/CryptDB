@@ -1,13 +1,10 @@
 assert(package.loadlib(os.getenv("EDBDIR").."/obj/libexecute.so",
                        "lua_cryptdb_init"))()
-
 local proto = assert(require("mysql.proto"))
 
 local g_want_interim    = nil
 local skip              = false
 local client            = nil
-
-local tmpclock = nil
 --
 -- Interception points provided by mysqlproxy
 --
@@ -127,16 +124,14 @@ end
 
 function dprint(x)
     if os.getenv("CRYPTDB_PROXY_DEBUG") then
-	print(x)
+        print(x)
     end
 end
 
 function read_query_real(packet)
     local query = string.sub(packet, 2)
-    CryptDB.timelog_reset()
     print("================================================")
     printred("QUERY: ".. query)
-    CryptDB.log_text("QUERY:" .. query)
 
     if string.byte(packet) == proxy.COM_INIT_DB then
         query = "USE `" .. query .. "`"
@@ -144,21 +139,15 @@ function read_query_real(packet)
 
     if string.byte(packet) == proxy.COM_INIT_DB or
        string.byte(packet) == proxy.COM_QUERY then
-    --CryptDB.log_text("timeadd_0")
-	CryptDB.timelog(0) --before_all_process
         status, error_msg =
             CryptDB.rewrite(client, query, proxy.connection.server.thread_id)
-    --CryptDB.log_text("timeadd_1")
-	CryptDB.timelog(1) --rewrite
 
         if false == status then
             proxy.response.type = proxy.MYSQLD_PACKET_ERR
             proxy.response.errmsg = error_msg
             return proxy.PROXY_SEND_RESULT
         end
-	
-    --CryptDB.log_text("timeadd_2")
-	CryptDB.timelog(2) --before_execute_query
+
         return next_handler("query", true, client, {}, {}, nil, nil)
     elseif string.byte(packet) == proxy.COM_QUIT then
         -- do nothing
@@ -168,14 +157,10 @@ function read_query_real(packet)
 end
 
 function read_query_result_real(inj)
-    --CryptDB.log_text("timeadd_3")
-    CryptDB.timelog(3) --execute_query
     local query = inj.query:sub(2)
     prettyNewQuery(query)
 
     if skip == true then
-    CryptDB.log_text("skip")
-    CryptDB.timelog_output("sum")
         skip = false
         return
     end
@@ -184,15 +169,13 @@ function read_query_result_real(inj)
     local resultset = inj.resultset
 
     if resultset.query_status == proxy.MYSQLD_PACKET_ERR then
-    CryptDB.log_text("status_err")
         return next_handler("results", false, client, {}, {}, 0, 0)
     end
 
     local client = proxy.connection.client.src.name
     local interim_fields = {}
     local interim_rows = {}
-    --CryptDB.log_text("timeadd_4")
-    CryptDB.timelog(4) --before_disp_encresult
+
     if true == g_want_interim then
         -- build up interim result for next(...) calls
         print(greentext("ENCRYPTED RESULTS:"))
@@ -229,8 +212,6 @@ function read_query_result_real(inj)
 
         printline(#resfields)
     end
-    --CryptDB.log_text("timeadd_5");
-    CryptDB.timelog(5) --disp_encresult
 
     return next_handler("results", true, client, interim_fields, interim_rows,
                         resultset.affected_rows, resultset.insert_id)
@@ -263,7 +244,6 @@ function next_handler(from, status, client, fields, rows, affected_rows,
 
         proxy.queries:append(get_index(), string.char(proxy.COM_QUERY) .. query,
                              { resultset_is_needed = true } )
-    CryptDB.log_text("next_again")
         return handle_from(from)
     elseif "query-results" == control then
         local query = param0
@@ -271,9 +251,6 @@ function next_handler(from, status, client, fields, rows, affected_rows,
         proxy.queries:append(get_index(), string.char(proxy.COM_QUERY) .. query,
                              { resultset_is_needed = true } )
         skip = true
-    CryptDB.log_text("next_qresult")
-        CryptDB.timelog(6) --test
-	CryptDB.timelog_output("sum")
         return handle_from(from)
     elseif "results" == control then
         local raffected_rows    = param0
@@ -289,9 +266,6 @@ function next_handler(from, status, client, fields, rows, affected_rows,
         proxy.response.affected_rows    = raffected_rows
         proxy.response.insert_id        = rinsert_id
 
-    CryptDB.log_text("next_results")
-        CryptDB.timelog(6) --disp_decresult
-	CryptDB.timelog_output("sum")
         return proxy.PROXY_SEND_RESULT
     elseif "error" == control then
         proxy.response.type     = proxy.MYSQLD_PACKET_ERR
@@ -299,7 +273,6 @@ function next_handler(from, status, client, fields, rows, affected_rows,
         proxy.response.errcode  = param1
         proxy.response.sqlstate = param2
 
-    CryptDB.log_text("next_error")
         return proxy.PROXY_SEND_RESULT
     end
 

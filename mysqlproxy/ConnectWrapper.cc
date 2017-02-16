@@ -29,6 +29,7 @@ public:
     std::string default_db;
     std::ofstream * PLAIN_LOG;
 
+
     WrapperState() {}
     ~WrapperState() {}
 
@@ -95,6 +96,20 @@ static std::string PLAIN_BASELOG = "";
 
 static int counter = 0;
 
+//goda
+static const int time_num = 7;
+static double time_arg[time_num];
+//time_num:exe part
+//0:before_allprocess
+//1:rewrite
+//2:before_execute_query
+//3:execute_query
+//4:before_disp_encresult
+//5:disp_encresult
+//6:disp_decresult
+static std::string time_name[time_num];
+static double time_sum = 0.0;
+
 static std::map<std::string, WrapperState*> clients;
 
 static void
@@ -145,7 +160,16 @@ connect(lua_State *const L)
     // Is it the first connection?
     if (!shared_ps) {
         std::cerr << "starting proxy\n";
-        //cryptdb_logger::setConf(string(getenv("CRYPTDB_LOG")?:""));
+
+	time_name[0] = "before_allprocess";
+	time_name[1] = "rewrite";
+	time_name[2] = "before_execute_query";
+	time_name[3] = "execute_query";
+	time_name[4] = "before_disp_encresult";
+	time_name[5] = "disp_encresult";
+	time_name[6] = "disp_decresult";
+
+	//LOG(time) << "time_t:" << t.lap();
 
         LOG(wrapper) << "connect " << client << "; "
                      << "server = " << server << ":" << port << "; "
@@ -250,6 +274,7 @@ disconnect(lua_State *const L)
 static int
 rewrite(lua_State *const L)
 {
+    //LOG(time) << "time_start_rewrite:" << t.lap_ms();
     ANON_REGION(__func__, &perf_cg);
     scoped_lock l(&big_lock);
     assert(0 == mysql_thread_init());
@@ -271,7 +296,7 @@ rewrite(lua_State *const L)
     std::list<std::string> new_queries;
 
     c_wrapper->last_query = query;
-    t.lap_ms();
+    //t.lap_ms();
     if (EXECUTE_QUERIES) {
         try {
             TEST_Text(retrieveDefaultDatabase(_thread_id, ps->getConn(),
@@ -282,7 +307,6 @@ rewrite(lua_State *const L)
             const std::shared_ptr<const SchemaInfo> &schema =
                 ps->getSchemaInfo();
             c_wrapper->schema_info_refs.push_back(schema);
-
             std::unique_ptr<QueryRewrite> qr =
                 std::unique_ptr<QueryRewrite>(new QueryRewrite(
                     Rewriter::rewrite(query, *schema.get(),
@@ -308,8 +332,48 @@ rewrite(lua_State *const L)
     lua_pushboolean(L, true);                       // status
     lua_pushnil(L);                                 // error message
 
+    //LOG(time) << "time_end_rewrite:" << t.lap_ms();
     return 2;
 }
+
+static int
+timelog_reset(lua_State *const L)
+{
+    for(int i=0;i<time_num;i++){
+	time_arg[i] = 0.0;
+    }
+    time_sum = 0.0;
+    t.lap_ms();
+    return 2;
+}
+
+static int
+timelog(lua_State *const L)
+{
+    double temp_t = t.lap_ms();
+    time_sum += temp_t;
+    
+    time_arg[(int)lua_tonumber(L,1)] = temp_t;
+    return 2;
+}
+
+static int
+log_text(lua_State *const L)
+{
+    LOG(time) << xlua_tolstring(L,1);
+    return 2;
+}
+
+static int
+timelog_output(lua_State *const L)
+{
+    for(int i=0;i<time_num;i++){
+	LOG(time) << time_name[i] << ":" << time_arg[i];
+    }
+    LOG(time) << "SUM:" << time_sum;
+    return 2;
+}
+
 
 inline std::vector<Item *>
 itemNullVector(unsigned int count)
@@ -554,6 +618,10 @@ cryptdb_lib[] = {
     F(disconnect),
     F(rewrite),
     F(next),
+    F(timelog),
+    F(log_text),
+    F(timelog_reset),
+    F(timelog_output),
     { 0, 0 },
 };
 
